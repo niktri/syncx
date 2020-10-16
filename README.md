@@ -2,7 +2,7 @@
 syncx adds lock-free features to golang sync package like `TryLock`, `AtomicInt`, `Once.IsDone`.
 Get syncx using:
 ```
-go get github.com/niktri/syncx
+    go get github.com/niktri/syncx
 ```
 
 
@@ -12,7 +12,7 @@ go get github.com/niktri/syncx
 * [`AtomicInt64`](https://github.com/niktri/syncx/blob/main/atomic_int64.go) - Safer alternative of sync/atomic, avoiding accidental unsafe access of shared variable & self-documenting its purpose.
 
 # TryLock
-`TryLock` is [Much discussed](https://github.com/golang/go/issues/6123) in golang community & it seems(rightly so) golang won't implement it.
+`TryLock` is [Much discussed](https://github.com/golang/go/issues/6123) in golang community & it seems(may be rightly so) golang won't implement it.
 ## MutexTryLocker
 * [`MutexTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is best implementation of TryLocker. It uses a Mutex + Atomic flag. 
 * Multiple `Lock()` or Multiple `TryLock()` calls won't race with each other. However single `TryLock()` may race with concurrnet `Lock()` calls.
@@ -20,23 +20,23 @@ In this scenario race will be ended on best effort basis.
 This is why it's TryLock is psuedo-non-blocking.
 * It's Lock-Unlock performance is very close(~8%) to Plain [sync.Mutex](https://golang.org/pkg/sync/#Mutex).
 
-### Example MutexTryLocker
+##### Example MutexTryLocker
 ```
     import "github.com/niktri/syncx"
     ...
     locker:=syncx.NewMutexTryLocker()
     m.Lock()
-	fmt.Println(m.TryLock())//false
-	m.Unlock()
-	fmt.Println(m.TryLock())//true
-	m.Unlock()
+    fmt.Println(m.TryLock())//false
+    m.Unlock()
+    fmt.Println(m.TryLock())//true
+    m.Unlock()
 ```
 
-## ChannelTryLocker
+### ChannelTryLocker
 * [`ChannelTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is implemented using go channels. 
 * It does not have live-lock issue of MutexTryLocker, but Lock() & TryLock() are 3x & 100x slower.
 
-## HackTryLocker
+### HackTryLocker
 * [`HackTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is implemented hacking sync.Mutex as it's [first variable is `state`](https://github.com/golang/go/blob/af8748054b40e9a1e529e42a0f83cc2c90a35af6/src/sync/mutex.go#L26).
 * It's 1000x slower than MutexTryLocker.
 
@@ -47,18 +47,18 @@ done or not. It does not expose it.
 * It can be used when we just want to query the status without doing actual work.
 * As [discussed here](https://github.com/golang/go/issues/41690), it's concluded that there aren't enough usecases to include to standard library.
 
-### Example Once.IsDone()
+#### Example Once.IsDone()
 ```
     once := syncx.Once{}
-	fmt.Println(once.IsDone()) //false
-	go once.Do(func() {
-		time.Sleep(3 * time.Second)
-	})
-	fmt.Println(once.IsDone()) //false
-	time.Sleep(1 * time.Second)
-	fmt.Println(once.IsDone()) //false
-	time.Sleep(5 * time.Second)
-	fmt.Println(once.IsDone()) //true
+    fmt.Println(once.IsDone()) //false
+    go once.Do(func() {
+        time.Sleep(3 * time.Second)
+    })
+    fmt.Println(once.IsDone()) //false
+    time.Sleep(1 * time.Second)
+    fmt.Println(once.IsDone()) //false
+    time.Sleep(5 * time.Second)
+    fmt.Println(once.IsDone()) //true
 ```
 
 # AtomicInt64
@@ -70,27 +70,27 @@ done or not. It does not expose it.
     * `MutexInt64` Plain Mutex guards variable. 3x slower than AtomicInt64.
     * `ChannelInt64`. Every mutation happens in another goroutine, communicated by channel. 30x slower than AtomicInt64
 
-### Example AtomicInt64
+##### Example AtomicInt64
 ```
     a := syncx.NewAtomicInt64(0)
-	a.Set(100)
-	a.Incr()
-	a.Add(50)
-	a.Sub(150)
-	fmt.Println(a.Decr())   //0
-	fmt.Println(a.String()) //0
-	wg := sync.WaitGroup{}
-	f := func(incr int64) {
-		for i := 0; i < 100000; i++ {
-			a.Add(incr)
-		}
-		wg.Done()
-	}
-	wg.Add(2)
-	go f(1)
-	go f(-1)
-	wg.Wait()
-	fmt.Println(a) //0
+    a.Set(100)
+    a.Incr()
+    a.Add(50)
+    a.Sub(150)
+    fmt.Println(a.Decr())   //0
+    fmt.Println(a.String()) //0
+    wg := sync.WaitGroup{}
+    f := func(incr int64) {
+        for i := 0; i < 100000; i++ {
+            a.Add(incr)
+        }
+        wg.Done()
+    }
+    wg.Add(2)
+    go f(1)
+    go f(-1)
+    wg.Wait()
+    fmt.Println(a) //0
 ```
 ##### Example AtomicInt64 live logging
 ```
@@ -98,7 +98,7 @@ done or not. It does not expose it.
     globalCounter := syncx.NewAtomicInt64(0)
 
     //On Every Request
-	log:=logrus.WithField("counter", globalCounter)
+    log:=logrus.WithField("counter", globalCounter)
     a.Incr()
     processRequest(contextWithLogger)
     a.Decr()
