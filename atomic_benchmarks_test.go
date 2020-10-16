@@ -31,9 +31,10 @@ func testIncrDecr(counter ConcurrentInt64, goroutines int, n int) int {
 	}
 	wg.Wait()
 	count := int(counter.Get())
-	// if count != 3*goroutines*n {
-	// 	panic(fmt.Errorf("Invalid count=%v go=%v n=%v", count, goroutines, n))
-	// }
+	//This will fail for ChannelCounter, as it's lazy.
+	if count != 3*goroutines*n {
+		panic(fmt.Errorf("Invalid count=%v go=%v n=%v", count, goroutines, n))
+	}
 	return count
 }
 

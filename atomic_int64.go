@@ -50,8 +50,8 @@ func (a *AtomicInt64) Sub(delta int64) int64 {
 	return atomic.AddInt64((*int64)(a), -delta)
 }
 
-// SetIfOld sets new value if current value is old, return false otherwise.
-func (a *AtomicInt64) SetIfOld(old int64, new int64) bool {
+// SetIf sets new value if current value is old, return false otherwise.
+func (a *AtomicInt64) SetIf(old int64, new int64) bool {
 	return atomic.CompareAndSwapInt64((*int64)(a), old, new)
 }
 
