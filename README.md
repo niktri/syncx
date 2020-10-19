@@ -1,4 +1,4 @@
-# syncx
+# syncx [![PkgGoDev](https://pkg.go.dev/badge/github.com/niktri/syncx)](https://pkg.go.dev/github.com/niktri/syncx)
 syncx adds lock-free features to golang sync package like `TryLock`,`RTryLock`, `AtomicInt`, `Once.IsDone`.
 Get syncx using:
 ```
