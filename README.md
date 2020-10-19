@@ -1,5 +1,5 @@
 # syncx
-syncx adds lock-free features to golang sync package like `TryLock`, `AtomicInt`, `Once.IsDone`.
+syncx adds lock-free features to golang sync package like `TryLock`,`RTryLock`, `AtomicInt`, `Once.IsDone`.
 Get syncx using:
 ```
     go get github.com/niktri/syncx
@@ -8,6 +8,7 @@ Get syncx using:
 
 # Features
 * Various [`TryLock`](https://github.com/niktri/syncx/blob/main/trylock.go) implementations - Lockfree way to acquire mutex Lock.
+* Various [`RTryLock`](https://github.com/niktri/syncx/blob/main/rwtrylock.go) implementations - Lockfree way to acquire RWMutex Lock.
 * Various lock-free functions like [`Once.IsDone()`]((https://github.com/niktri/syncx/blob/main/once.go)), [`Locker.IsLocked()`]((https://github.com/niktri/syncx/blob/main/trylock.go)) extending golang/sync
 * [`AtomicInt64`](https://github.com/niktri/syncx/blob/main/atomic_int64.go) - Safer alternative of sync/atomic, avoiding accidental unsafe access of shared variable & self-documenting its purpose.
 
@@ -15,13 +16,13 @@ Get syncx using:
 **Usecase** Any usecase to obtain lock without blocking. e.g. Cache cleanup thread wants to clean expired entries, but not if refresher thread is already busy.
 `TryLock` is [Much discussed](https://github.com/golang/go/issues/6123) in golang community & it seems(may be rightly so) golang won't implement it.
 
-We have 3 implementations of TryLocker interface:
+We have 4 implementations of TryLocker interface:
 
 ## MutexTryLocker
-* [`MutexTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is best implementation of TryLocker in most benchmarks. 
+* [`MutexTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is best implementation of `TryLocker` in most benchmarks. 
 It uses a Mutex + Atomic flag. 
 * Multiple `Lock()` or Multiple `TryLock()` calls won't race with each other. However single `TryLock()` may race with concurrnet `Lock()` calls.
-In this scenario race will be ended on best effort basis.
+In this scenario race will be resolved on best effort basis.
 This is why it's TryLock is psuedo-non-blocking.
 * It's Lock-Unlock performance is very close(~8%) to Plain [sync.Mutex](https://golang.org/pkg/sync/#Mutex).
 
@@ -37,13 +38,53 @@ This is why it's TryLock is psuedo-non-blocking.
     m.Unlock()
 ```
 
-### ChannelTryLocker
+## AtomicTryLocker
+* [`AtomicTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is similar to MutexTryLocker using only atomic flag without Mutex.
+* Multiple `Lock()` or Multiple `TryLock()` calls will race with each other, race will be resolved on best effort basis.
+* It's Lock-Unlock performance is very close(~8%) to Plain [sync.Mutex](https://golang.org/pkg/sync/#Mutex).
+
+#### ChannelTryLocker
 * [`ChannelTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is implemented using go channels. 
 * It does not have live-lock issue of MutexTryLocker, but Lock() & TryLock() are 3x & 100x slower.
+* ChannelTryLocker efficiently implements `TryLockWithTimeout`, waiting for channel or time simultaneously in `select` loop.
 
-### HackTryLocker
+#### HackTryLocker
 * [`HackTryLocker`](https://github.com/niktri/syncx/blob/main/trylock.go) is implemented hacking sync.Mutex as it's [first variable is `state`](https://github.com/golang/go/blob/af8748054b40e9a1e529e42a0f83cc2c90a35af6/src/sync/mutex.go#L26).
 * It's 1000x slower than MutexTryLocker.
+
+# RWTryLock
+**Usecase** Similar to TryLock usecases with additional `TryRLock`.
+
+
+## RWMutexTryLocker
+* [`RWMutexTryLocker`](https://github.com/niktri/syncx/blob/main/rwtrylock.go) is an implementation of `RWTryLocker`.
+It uses a Mutex + Atomic state. 
+* Multiple `Lock()` or Multiple `TryLock()` or multiple `TryRLock()` calls won't race with each other. However single `TryLock()` or `TryRLock` may race with concurrnet `Lock()` or `RLock()` calls.
+In this scenario race will be resolved on best effort basis.
+This is why it's TryLock is psuedo-non-blocking.
+* It's Lock-Unlock performance is very close(~8%) to Plain [sync.RWMutex](https://golang.org/pkg/sync/#RWMutex).
+
+##### Example MutexRWTryLocker
+```
+    m := syncx.NewMutexRWTryLocker()
+    m.Lock()
+    fmt.Println(m.TryLock())  //false
+    fmt.Println(m.TryRLock()) //false
+    m.Unlock()
+    fmt.Println(m.TryLock())  //true
+    fmt.Println(m.TryRLock()) //false
+    m.Unlock()
+    fmt.Println(m.TryRLock()) //true
+    fmt.Println(m.TryLock())  //false
+    fmt.Println(m.TryRLock()) //true
+    fmt.Println(m.TryRLock()) //true
+    fmt.Println(m.TryLock())  //false
+    m.RUnlock()
+    m.RUnlock()
+    m.RUnlock()
+    fmt.Println(m.TryLock()) //true
+    m.Unlock()
+```
 
 # Once.IsDone()
 * **Usecase** Lockfree querying sync.Once if it is already done without doing actual work.

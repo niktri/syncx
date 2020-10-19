@@ -9,11 +9,12 @@ import (
 	"unsafe"
 )
 
-//TryLocker extends sync.Locker with a TryLock. 3 implementations are benchmarked.
-//MutexTryLocker is the best implementation in most cases, other implementations should be avoided.
+//TryLocker extends sync.Locker with a TryLock.
+//4 implementations are benchmarked. MutexTryLocker & AtomicTryLocker are best implementation in most cases, other implementations should be avoided.
 type TryLocker interface {
 	sync.Locker
 	//TryLock tries to acquire lock, returns true if success, false if it is not possible to acquire lock without blocking.
+	//TryLock() may be used when we can do something else if lock is busy, dont call this in empty infinite loop.
 	TryLock() bool
 	//IsLocked returns true if locked. There are no real use-cases for this except keeping stats or logging.
 	IsLocked() bool
@@ -25,28 +26,31 @@ func _() {
 	var _ TryLocker = (*MutexTryLocker)(nil)
 }
 
-//NewMutexTryLocker creates TryLocker using mutex + atomic blocked flag. Read tryLockMutex.TryLock() doc for details.
-//A rare race scenario will be resolved on best-effort basis governed by thresholds.
-//MutexTryLocker is the best implementation to be used in most cases.
+//NewMutexTryLocker creates TryLocker using mutex + atomic state. Read NewMutexTryLocker.TryLock() doc for details.
+//There is no race for 2 Lock() or 2 TryLock() calls. There is a race for 1 TryLock() & multiple Lock().
+//That will be resolved on best-effort basis governed by thresholds.
 func NewMutexTryLocker() *MutexTryLocker {
 	const livelockThreshold = 10
 	const giveupThreshould = int(^uint(0) >> 1)
-	return NewTryLockMutexWithThresholds(&sync.Mutex{}, livelockThreshold, giveupThreshould)
+	return NewMutexTryLockerWithThresholds(&sync.Mutex{}, livelockThreshold, giveupThreshould)
 }
 
-//NewTryLockMutexWithThresholds creates TryLocker using mutex + atomic blocked flag. Read tryLockMutex.TryLock() doc for details.
+//NewMutexTryLockerWithThresholds creates TryLocker using mutex + atomic state. Read NewMutexTryLocker.TryLock() doc for details.
 //`giveupThreshould > livelockThreshold >=1`
-func NewTryLockMutexWithThresholds(locker sync.Locker, livelockThreshold int, giveupThreshould int) *MutexTryLocker {
+func NewMutexTryLockerWithThresholds(locker sync.Locker, livelockThreshold int, giveupThreshould int) *MutexTryLocker {
 	if livelockThreshold < 1 || giveupThreshould <= livelockThreshold {
 		panic("Invalid Thresholds: " + strconv.Itoa(livelockThreshold) + " , " + strconv.Itoa(giveupThreshould))
 	}
-	return &MutexTryLocker{&sync.Mutex{}, 0, livelockThreshold, giveupThreshould}
+	return &MutexTryLocker{&sync.Mutex{}, unblocked, livelockThreshold, giveupThreshould}
 }
+
+const unblocked = 0
+const blocked = -1
 
 //MutexTryLocker is non-blocking extension of golang sync.Mutex. Read TryLock() doc for details.
 type MutexTryLocker struct {
 	locker            sync.Locker // Client can pass any Locker
-	blocked           int32       // 0: unblocked, 0: blocked
+	state             int32       // 0: unblocked, -1: blocked
 	livelockThreshold int         // After this we consider livelock & sleep
 	giveupThreshould  int         // After this we give-up.
 }
@@ -56,12 +60,12 @@ type MutexTryLocker struct {
 //Lock() can be called concurrently without race. TryLock() can be called concurrently without race.
 //If Single TryLock() is called concurrently to Lock(), we might encounter race.
 //Note that further concurrent TryLock() will simply return false without race.
-//In this rare case, resolution is made on best-effort basis governed by thresholds.
+//In that case, resolution is made on best-effort basis governed by thresholds.
 func (m *MutexTryLocker) Lock() {
 	// startTime := time.Now()
 	for i := 0; ; i++ {
-		m.locker.Lock()                                    //@LOCK
-		if !atomic.CompareAndSwapInt32(&m.blocked, 0, 1) { //@BLOCKED
+		m.locker.Lock()                                                //@LOCK
+		if !atomic.CompareAndSwapInt32(&m.state, unblocked, blocked) { //@BLOCKED
 			//There is only 1 reason we are here: Someone reached @TRYLOCK before we reached @BLOCKED. Release & retry @LOCK.
 			m.locker.Unlock()
 			if i < m.livelockThreshold {
@@ -69,9 +73,14 @@ func (m *MutexTryLocker) Lock() {
 				//Unlucky is unable to acquire lock, as lucky ones keep winning the @LOCK. Gosched() may dampen this a bit.
 				runtime.Gosched()
 			} else {
+				// fmt.Println("Mutex threshold ", i, time.Now().Sub(startTime))
 				if i < m.giveupThreshould { //@LIVELOCK
 					//Code reaching here should be even rarer. Gosched() wasn't enough. We must sleep.
-					time.Sleep(time.Duration(i-m.livelockThreshold) * time.Millisecond)
+					d := time.Duration(i-m.livelockThreshold) * time.Millisecond
+					if d > 1*time.Second {
+						d = 1 * time.Second
+					}
+					time.Sleep(d)
 					runtime.Gosched()
 				} else { //@GIVEUP
 					panic("This should never occur: LiveLock in syncx.Mutex.Lock: " + strconv.Itoa(i))
@@ -85,15 +94,16 @@ func (m *MutexTryLocker) Lock() {
 
 // Unlock unlocks m as in sync.Mutex.Unlock()
 func (m *MutexTryLocker) Unlock() {
-	if !atomic.CompareAndSwapInt32(&m.blocked, 1, 0) {
+	if !atomic.CompareAndSwapInt32(&m.state, blocked, unblocked) {
 		panic("syncx: unlock of unblocked mutex")
 	}
 	m.locker.Unlock()
 }
 
 //TryLock is a psuedo-non-blocking way to acquire lock, returns true if it acquires lock, false otherwise.
+//TryLock() may be used when we can do something else if lock is busy, dont call this in empty infinite loop.
 func (m *MutexTryLocker) TryLock() bool {
-	if atomic.CompareAndSwapInt32(&m.blocked, 0, 1) { //@TRYLOCK
+	if atomic.CompareAndSwapInt32(&m.state, unblocked, blocked) { //@TRYLOCK
 		//This is psuedo-non-blocking as if other goroutines are just before @BLOCKED they will try best to release & yield,
 		//to give this goroutine a chance to acquire lock without wasting much time.
 		m.locker.Lock()
@@ -104,7 +114,83 @@ func (m *MutexTryLocker) TryLock() bool {
 
 //IsLocked returns true if locked. There are no real use-cases for this except keeping stats or logging.
 func (m *MutexTryLocker) IsLocked() bool {
-	return atomic.LoadInt32(&m.blocked) == 1
+	return atomic.LoadInt32(&m.state) == blocked
+}
+
+// ****************** AtomicTryLocker using Atomic flag ******************
+
+func _() {
+	var _ TryLocker = (*AtomicTryLocker)(nil)
+}
+
+//NewAtomicTryLocker creates TryLocker using atomic state. Read AtomicTryLocker.TryLock() doc for details.
+//Lock() & TryLock() can race with each other.
+//It will be resolved on best-effort basis governed by thresholds.
+func NewAtomicTryLocker() *AtomicTryLocker {
+	const livelockThreshold = 10
+	const giveupThreshould = int(^uint(0) >> 1)
+	return NewAtomicTryLockerWithThresholds(livelockThreshold, giveupThreshould)
+}
+
+//NewAtomicTryLockerWithThresholds creates TryLocker using atomic state. Read AtomicTryLocker.TryLock() doc for details.
+//`giveupThreshould > livelockThreshold >=1`
+func NewAtomicTryLockerWithThresholds(livelockThreshold int, giveupThreshould int) *AtomicTryLocker {
+	if livelockThreshold < 1 || giveupThreshould <= livelockThreshold {
+		panic("Invalid Thresholds: " + strconv.Itoa(livelockThreshold) + " , " + strconv.Itoa(giveupThreshould))
+	}
+	return &AtomicTryLocker{unblocked, livelockThreshold, giveupThreshould}
+}
+
+//AtomicTryLocker is non-blocking extension of golang sync.Mutex. Read TryLock() doc for details.
+type AtomicTryLocker struct {
+	state             int32 // 0: unblocked, -1: blocked
+	livelockThreshold int   // After this we consider livelock & sleep
+	giveupThreshould  int   // After this we give-up.
+}
+
+//Lock locks m as in sync.Mutex.Lock(). It blocks if m is already locked.
+//
+//Lock() calls TryLock() in loop until success. This will result in race, which is dampened using Gosched() and Sleep().
+func (m *AtomicTryLocker) Lock() {
+	// startTime := time.Now()
+	for i := 0; !m.TryLock(); i++ {
+		if i < m.livelockThreshold {
+			runtime.Gosched()
+		} else {
+			if i < m.giveupThreshould { //@LIVELOCK
+				// fmt.Println("Atomic threshold ", i, time.Now().Sub(startTime))
+				d := time.Duration(i-m.livelockThreshold) * time.Millisecond
+				if d > 1*time.Second {
+					d = 1 * time.Second
+				}
+				time.Sleep(d)
+				runtime.Gosched()
+			} else { //@GIVEUP
+				panic("This should never occur: LiveLock in syncx.Mutex.Lock: " + strconv.Itoa(i))
+			}
+		}
+	}
+}
+
+// Unlock unlocks m as in sync.Mutex.Unlock()
+func (m *AtomicTryLocker) Unlock() {
+	if !atomic.CompareAndSwapInt32(&m.state, blocked, unblocked) {
+		panic("syncx: unlock of unblocked mutex")
+	}
+}
+
+//TryLock is a non-blocking way to acquire lock, returns true if it acquires lock, false otherwise.
+//TryLock() may be used when we can do something else if lock is busy, dont call this in empty infinite loop.
+func (m *AtomicTryLocker) TryLock() bool {
+	if atomic.CompareAndSwapInt32(&m.state, unblocked, blocked) { //@TRYLOCK
+		return true
+	}
+	return false
+}
+
+//IsLocked returns true if locked. There are no real use-cases for this except keeping stats or logging.
+func (m *AtomicTryLocker) IsLocked() bool {
+	return atomic.LoadInt32(&m.state) == blocked
 }
 
 // ****************** ChannelTryLocker using channels ******************
@@ -115,17 +201,17 @@ func _() {
 
 // NewChannelTryLocker creates TryLocker using channels.
 func NewChannelTryLocker() *ChannelTryLocker {
-	return &ChannelTryLocker{make(chan int32, 1)}
+	return &ChannelTryLocker{make(chan struct{}, 1)}
 }
 
 //ChannelTryLocker implements TryLocker using Channels. It does not have live-lock issue of MutexTryLocker, but Lock() & TryLock() are 3x & 100x slower.
 type ChannelTryLocker struct {
-	ch chan int32
+	ch chan struct{}
 }
 
 //Lock acquires lock
 func (m *ChannelTryLocker) Lock() {
-	m.ch <- 1
+	m.ch <- struct{}{}
 }
 
 //Unlock releases lock
@@ -136,9 +222,19 @@ func (m *ChannelTryLocker) Unlock() {
 //TryLock tries to acquire lock, returns true if success, false if it is not possible to acquire lock without blocking.
 func (m *ChannelTryLocker) TryLock() bool {
 	select {
-	case m.ch <- 1:
+	case m.ch <- struct{}{}:
 		return true
 	default:
+		return false
+	}
+}
+
+//TryLockWithTimeout acquires lock if it can do so before timeout returning true, returns false otherwise.
+func (m *ChannelTryLocker) TryLockWithTimeout(timeout time.Duration) bool {
+	select {
+	case m.ch <- struct{}{}:
+		return true
+	case <-time.After(timeout):
 		return false
 	}
 }

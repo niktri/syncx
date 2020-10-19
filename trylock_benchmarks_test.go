@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"time"
 )
 
 // ******************** L O C K - B E N C H M A R K S ********************
@@ -39,6 +40,7 @@ func testLocks(locker sync.Locker, goroutines int, n int) int {
 					} else {
 						count--
 					}
+					// time.Sleep(5000 * time.Millisecond)
 					locker.Unlock()
 				}
 			}
@@ -53,24 +55,30 @@ func testLocks(locker sync.Locker, goroutines int, n int) int {
 
 func BenchmarkPlainMutex_Lock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLocks(&sync.Mutex{}, 50, 30)
+		testLocks(&sync.Mutex{}, 250, 1)
 	}
 }
 
 func BenchmarkMutexTryLocker_Lock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLocks(NewMutexTryLocker(), 50, 30)
+		testLocks(NewMutexTryLocker(), 250, 1)
 	}
 }
 func BenchmarkChannelTryLocker_Lock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLocks(NewChannelTryLocker(), 50, 30)
+		testLocks(NewChannelTryLocker(), 250, 1)
 	}
 }
 
 func BenchmarkHackTryLocker_Lock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLocks(NewHackTryLocker(), 50, 30)
+		testLocks(NewHackTryLocker(), 250, 1)
+	}
+}
+
+func BenchmarkAtomicTryLocker_Lock(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLocks(NewAtomicTryLocker(), 250, 10)
 	}
 }
 
@@ -90,7 +98,7 @@ func testTryLock(locker TryLocker, goroutines int, n int) int {
 			for i := 0; i < n; i++ {
 				for j := 0; j < 17; j++ {
 					b := arr[17*g+j]
-					if b {
+					if j <= 10 {
 						for !locker.TryLock() {
 							// fmt.Println("TryAgain")
 						}
@@ -102,6 +110,7 @@ func testTryLock(locker TryLocker, goroutines int, n int) int {
 					} else {
 						count--
 					}
+					time.Sleep(100 * time.Millisecond)
 					locker.Unlock()
 				}
 			}
@@ -115,9 +124,10 @@ func testTryLock(locker TryLocker, goroutines int, n int) int {
 }
 
 func BenchmarkMutexTryLocker_TryLock(b *testing.B) {
+	// m := NewMutexTryLockerWithThresholds(&sync.Mutex{}, 1000000*1000000, 1000000*1000000+1)
 	m := NewMutexTryLocker()
 	for i := 0; i < b.N; i++ {
-		testTryLock(m, 50, 30)
+		testTryLock(m, 12, 1)
 	}
 }
 
@@ -132,5 +142,12 @@ func BenchmarkHackTryLocker_TryLock(b *testing.B) {
 	m := NewHackTryLocker()
 	for i := 0; i < b.N; i++ {
 		testTryLock(m, 50, 30)
+	}
+}
+func BenchmarkAtomicTryLocker_TryLock(b *testing.B) {
+	// m := NewAtomicTryLockerWithThresholds(1000000*1000000, 1000000*1000000+1)
+	m := NewAtomicTryLocker()
+	for i := 0; i < b.N; i++ {
+		testTryLock(m, 12, 1)
 	}
 }

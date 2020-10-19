@@ -15,20 +15,46 @@ func exampleTryLock(m TryLocker) {
 }
 
 func ExampleNewMutexTryLocker() {
-	exampleTryLock(NewMutexTryLocker())
+	m := NewMutexTryLocker()
+	m.Lock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
 	//Output:
 	//false
 	//true
 }
 
 func ExampleNewChannelTryLocker() {
-	exampleTryLock(NewChannelTryLocker())
+	m := NewChannelTryLocker()
+	m.Lock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
 	//Output: false
 	//true
 }
 
 func ExampleNewHackTryLocker() {
-	exampleTryLock(NewHackTryLocker())
+	m := NewHackTryLocker()
+	m.Lock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
+	//Output: false
+	//true
+}
+
+func ExampleNewAtomicTryLocker() {
+	m := NewHackTryLocker()
+	m.Lock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
+	fmt.Println(m.TryLock())
+	m.Unlock()
 	//Output: false
 	//true
 }
