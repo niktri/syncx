@@ -26,7 +26,7 @@ func _() {
 	var _ RWTryLocker = (*MutexRWTryLocker)(nil)
 }
 
-//NewMutexRWTryLocker creates TryLocker using mutex + atomic blocked flag. Read tryLockMutex.TryLock() doc for details.
+//NewMutexRWTryLocker creates TryLocker using mutex + atomic blocked flag. Read MutexRWTryLocker.TryLock() doc for details.
 func NewMutexRWTryLocker() *MutexRWTryLocker {
 	const livelockThreshold = 10
 	const giveupThreshould = int(^uint(0) >> 1)

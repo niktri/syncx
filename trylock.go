@@ -26,7 +26,7 @@ func _() {
 	var _ TryLocker = (*MutexTryLocker)(nil)
 }
 
-//NewMutexTryLocker creates TryLocker using mutex + atomic state. Read NewMutexTryLocker.TryLock() doc for details.
+//NewMutexTryLocker creates TryLocker using mutex + atomic state. Read MutexTryLocker.TryLock() doc for details.
 //There is no race for 2 Lock() or 2 TryLock() calls. There is a race for 1 TryLock() & multiple Lock().
 //That will be resolved on best-effort basis governed by thresholds.
 func NewMutexTryLocker() *MutexTryLocker {

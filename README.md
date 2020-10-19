@@ -8,7 +8,7 @@ Get syncx using:
 
 # Features
 * Various [`TryLock`](https://github.com/niktri/syncx/blob/main/trylock.go) implementations - Lockfree way to acquire mutex Lock.
-* Various [`RTryLock`](https://github.com/niktri/syncx/blob/main/rwtrylock.go) implementations - Lockfree way to acquire RWMutex Lock.
+* Various [`TryRLock`](https://github.com/niktri/syncx/blob/main/rwtrylock.go) implementations - Lockfree way to acquire RWMutex Lock.
 * Various lock-free functions like [`Once.IsDone()`]((https://github.com/niktri/syncx/blob/main/once.go)), [`Locker.IsLocked()`]((https://github.com/niktri/syncx/blob/main/trylock.go)) extending golang/sync
 * [`AtomicInt64`](https://github.com/niktri/syncx/blob/main/atomic_int64.go) - Safer alternative of sync/atomic, avoiding accidental unsafe access of shared variable & self-documenting its purpose.
 
@@ -53,7 +53,7 @@ This is why it's TryLock is psuedo-non-blocking.
 * It's 1000x slower than MutexTryLocker.
 
 # RWTryLock
-**Usecase** Similar to TryLock usecases with additional `TryRLock`.
+**Usecase** `RWTryLock` is similar to TryLock with additional `TryRLock`.
 
 
 ## RWMutexTryLocker
